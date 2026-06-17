@@ -1,0 +1,24 @@
+# GitLab CI — на кожен push запускає AWS Step Function (тренувальний пайплайн).
+#
+# Потрібні CI/CD variables (Settings → CI/CD → Variables):
+#   AWS_ACCESS_KEY_ID      — ключ IAM-користувача з правами states:StartExecution
+#   AWS_SECRET_ACCESS_KEY  — секрет
+#   AWS_DEFAULT_REGION     — eu-north-1
+#   STATE_MACHINE_ARN      — ARN Step Function (terraform output state_machine_arn)
+
+stages:
+  - train
+
+train-model:
+  stage: train
+  image: amazon/aws-cli:2.15.0
+  # запускається на push у будь-яку гілку
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+  script:
+    - echo "Starting Step Function execution for commit $CI_COMMIT_SHORT_SHA"
+    - >
+      aws stepfunctions start-execution
+      --state-machine-arn "$STATE_MACHINE_ARN"
+      --name "train-$(date +%s)"
+      --input "{\"source\":\"gitlab-ci\",\"commit\":\"$CI_COMMIT_SHORT_SHA\"}"

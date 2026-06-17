@@ -1,0 +1,9 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+.terraformrc
+terraform.rc
+# .terraform.lock.hcl та lambda/*.zip навмисно НЕ ігноруємо (частина деліверабла)
