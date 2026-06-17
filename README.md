@@ -15,47 +15,57 @@ git push → GitLab CI (train-model job)
                 └─ LogMetrics    → Lambda mlops-train-log-metrics
 ```
 
-## Перевірка та скриншоти
+## Скриншоти (AWS Console)
 
-Усі скриншоти — реальні виводи з акаунта `152128592418`, регіон `eu-north-1`.
+Реальні сторінки AWS Console, акаунт `152128592418`, регіон `eu-north-1`.
 
-### 1. `terraform apply` — інфраструктура створена
+### 1. Step Functions — список виконань
 
-7 ресурсів (IAM ролі, 2 Lambda, Step Function). В `outputs` — ARN машини станів і функцій.
+Машина станів `mlops-train-pipeline`, вкладка **Executions**: три запуски зі статусом
+**Succeeded** (тривалість, час старту/завершення).
 
-![terraform apply](screenshots/01-terraform-apply.png)
+![Step Functions executions](screenshots/aws-01-executions.png)
 
-### 2. Step Function — кілька SUCCEEDED-виконань
+### 2. Граф виконання `ValidateData → LogMetrics`
 
-`list-executions` показує успішні запуски: три ручні (`manual-…`) та один у стилі
-GitLab CI (`train-<sha>-…`). У Step Functions Console це той самий список Executions.
+**Graph view** одного виконання: `Start → ValidateData → LogMetrics → End`, усі кроки
+зелені (Succeeded). Кожен Task викликає відповідну Lambda.
 
-![executions succeeded](screenshots/02-executions-succeeded.png)
+![Step Functions graph](screenshots/aws-02-graph.png)
 
-### 3. Граф пайплайна `ValidateData → LogMetrics`
+### 3. CloudWatch — лог Lambda `validate`
 
-Визначення машини станів: перший крок викликає Lambda `validate`, далі — `log_metrics`,
-потім `End`. У Console це візуальний граф із двох послідовних Task-станів.
+Лог-група `/aws/lambda/mlops-train-validate`, останній log stream: `print()`-вивід
+функції (`=== ValidateData ===`, вхідний JSON, `Validation result`) і `REPORT` із
+Duration/Memory.
 
-![state machine graph](screenshots/03-state-machine-graph.png)
+![CloudWatch validate log](screenshots/aws-03-cloudwatch.png)
 
-### 4. Output виконання (SUCCEEDED)
+## CLI-перевірка (реальні виводи)
 
-`describe-execution` запуску зі `source: gitlab-ci`: видно звіт валідації
-(`rows_checked`, `valid_ratio`) і метрики (`accuracy`, `loss`, `f1`), пораховані Lambda.
+```text
+$ terraform apply -auto-approve
+Apply complete! Resources: 7 added, 0 changed, 0 destroyed.
+Outputs:
+state_machine_arn   = "arn:aws:states:eu-north-1:152128592418:stateMachine:mlops-train-pipeline"
+validate_lambda_arn = "arn:aws:lambda:eu-north-1:152128592418:function:mlops-train-validate"
 
-![execution output](screenshots/04-execution-output.png)
+$ aws stepfunctions list-executions --state-machine-arn "$SM_ARN" --status-filter SUCCEEDED \
+      --query 'executions[].{name:name,status:status}' --output table
+|  manual-1781696334540 |  SUCCEEDED  |
+|  manual-1781696332910 |  SUCCEEDED  |
+|  manual-1781696331393 |  SUCCEEDED  |
 
-### 5. CloudWatch — лог Lambda `validate`
+$ aws stepfunctions describe-execution --execution-arn "$L" --query output
+{ "status": "succeeded",
+  "validate": { "status": "ok", "rows_checked": 5000, "valid_ratio": 0.998 },
+  "metrics":  { "accuracy": 0.99, "loss": 0.15, "f1": 0.98, "epochs": 300 } }
+```
 
-`get-log-events` з лог-групи `/aws/lambda/mlops-train-validate`: видно `print()`-вивід
-функції (вхідний JSON і результат валідації) та REPORT із Duration/Memory.
-
-![cloudwatch validate](screenshots/05-cloudwatch-validate.png)
-
-> GitLab CI job `train-model` виконує саме команду `aws stepfunctions start-execution`
-> (скрин 2, запуск `train-<sha>`). Репозиторій тут на GitHub, тож сам пайплайн не
-> запускається — для реального запуску продублюйте репо в GitLab і додайте CI-змінні.
+> **GitLab CI:** репозиторій тут на GitHub, тож сам пайплайн не виконується. Файл
+> `.gitlab-ci.yml` (job `train-model` → `aws stepfunctions start-execution`) повністю
+> готовий — для реального запуску продублюйте репо в GitLab і додайте CI-змінні
+> (`AWS_*`, `STATE_MACHINE_ARN`).
 
 ## Структура
 
