@@ -1,21 +1,29 @@
-"""Lambda-крок 1: валідація вхідних даних перед тренуванням."""
+"""Lambda-крок 1: валідація вхідного датасету перед тренуванням."""
 import json
+from datetime import datetime, timezone
 
 
 def handler(event, context):
-    print("Validating data...")
-    print(f"Received event: {json.dumps(event)}")
+    print("=== ValidateData ===")
+    print(f"Input: {json.dumps(event)}")
 
-    # Умовна валідація: вважаємо дані валідними, якщо вказано джерело запуску
-    source = event.get("source", "unknown")
-    is_valid = bool(source) and source != "unknown"
+    rows = int(event.get("rows", 1000))
+    # умовна перевірка якості даних
+    invalid_rows = rows // 500
+    valid_ratio = round(1 - invalid_rows / rows, 4) if rows else 0.0
+    status = "ok" if valid_ratio >= 0.9 else "warn"
 
-    result = {
-        "statusCode": 200,
-        "valid": is_valid,
-        "source": source,
+    validate = {
+        "step": "validate",
+        "status": status,
+        "rows_checked": rows,
+        "invalid_rows": invalid_rows,
+        "valid_ratio": valid_ratio,
+        "source": event.get("source", "unknown"),
         "commit": event.get("commit", "n/a"),
-        "message": "Data validated successfully" if is_valid else "Validation failed",
+        "checked_at": datetime.now(timezone.utc).isoformat(),
     }
-    print(f"Validation result: {json.dumps(result)}")
-    return result
+    print(f"Validation result: {json.dumps(validate)}")
+
+    # передаємо оригінальний вхід далі + додаємо звіт валідації
+    return {**event, "validate": validate}

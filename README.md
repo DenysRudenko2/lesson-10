@@ -15,11 +15,47 @@ git push → GitLab CI (train-model job)
                 └─ LogMetrics    → Lambda mlops-train-log-metrics
 ```
 
-## Результат
+## Перевірка та скриншоти
 
-`terraform apply` створює пайплайн; запуск виконується успішно (`ValidateData → LogMetrics`, статус **SUCCEEDED**):
+Усі скриншоти — реальні виводи з акаунта `152128592418`, регіон `eu-north-1`.
 
-![Step Function succeeded](screenshots/01-stepfunction-succeeded.png)
+### 1. `terraform apply` — інфраструктура створена
+
+7 ресурсів (IAM ролі, 2 Lambda, Step Function). В `outputs` — ARN машини станів і функцій.
+
+![terraform apply](screenshots/01-terraform-apply.png)
+
+### 2. Step Function — кілька SUCCEEDED-виконань
+
+`list-executions` показує успішні запуски: три ручні (`manual-…`) та один у стилі
+GitLab CI (`train-<sha>-…`). У Step Functions Console це той самий список Executions.
+
+![executions succeeded](screenshots/02-executions-succeeded.png)
+
+### 3. Граф пайплайна `ValidateData → LogMetrics`
+
+Визначення машини станів: перший крок викликає Lambda `validate`, далі — `log_metrics`,
+потім `End`. У Console це візуальний граф із двох послідовних Task-станів.
+
+![state machine graph](screenshots/03-state-machine-graph.png)
+
+### 4. Output виконання (SUCCEEDED)
+
+`describe-execution` запуску зі `source: gitlab-ci`: видно звіт валідації
+(`rows_checked`, `valid_ratio`) і метрики (`accuracy`, `loss`, `f1`), пораховані Lambda.
+
+![execution output](screenshots/04-execution-output.png)
+
+### 5. CloudWatch — лог Lambda `validate`
+
+`get-log-events` з лог-групи `/aws/lambda/mlops-train-validate`: видно `print()`-вивід
+функції (вхідний JSON і результат валідації) та REPORT із Duration/Memory.
+
+![cloudwatch validate](screenshots/05-cloudwatch-validate.png)
+
+> GitLab CI job `train-model` виконує саме команду `aws stepfunctions start-execution`
+> (скрин 2, запуск `train-<sha>`). Репозиторій тут на GitHub, тож сам пайплайн не
+> запускається — для реального запуску продублюйте репо в GitLab і додайте CI-змінні.
 
 ## Структура
 
